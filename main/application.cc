@@ -526,21 +526,46 @@ void Application::OnClockTimer() {
     static int count = 0;
     count++;
 
-    // Print the debug info every 10 seconds
     if (count % 10 == 0) {
-        // SystemInfo::PrintRealTimeStats(pdMS_TO_TICKS(1000));
         int free_sram = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
         int min_free_sram = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
         ESP_LOGI(TAG, "Free internal: %u minimal internal: %u", free_sram, min_free_sram);
 
-        // If we have synchronized server time, set the status to clock "HH:MM" if the device is idle
         if (ota_.HasServerTime()) {
             Schedule([this]() {
                 if (device_state_ == kDeviceStateIdle) {
-                    // Set status to clock "HH:MM"
                     time_t now = time(NULL);
                     char time_str[64];
-                    strftime(time_str, sizeof(time_str), "%H:%M  ", localtime(&now));
+
+                    // 目标时间：2026-06-07 00:00:00 (北京时间)
+                    struct tm target_tm = {0};
+                    target_tm.tm_year = 2026 - 1900; // 年份从1900开始
+                    target_tm.tm_mon = 6 - 1;         // 月份从0开始
+                    target_tm.tm_mday = 7;
+                    target_tm.tm_hour = 0;
+                    target_tm.tm_min = 0;
+                    target_tm.tm_sec = 0;
+                    target_tm.tm_isdst = -1;         // 自动处理夏令时
+
+                    time_t target_time = mktime(&target_tm);
+                    if (target_time == -1) {
+                        // 处理时间转换错误（可选）
+                        strcpy(time_str, "时间错误");
+                    } else {
+                        double diff_seconds = difftime(target_time, now);
+                        if (diff_seconds < 0) {
+                            snprintf(time_str, sizeof(time_str), "%02d:%02d 倒计时：已结束",
+                                     localtime(&now)->tm_hour, localtime(&now)->tm_min);
+                        } else {
+                            int total_minutes = static_cast<int>(diff_seconds / 60);
+                            int days = total_minutes / (60 * 24);
+                            int hours = (total_minutes % (60 * 24)) / 60;
+                            int minutes = total_minutes % 60;
+                            snprintf(time_str, sizeof(time_str), "%02d:%02d 倒计时：%d天%d小时%d分钟",
+                                     localtime(&now)->tm_hour, localtime(&now)->tm_min, days, hours, minutes);
+                        }
+                    }
+
                     Board::GetInstance().GetDisplay()->SetStatus(time_str);
                 }
             });
